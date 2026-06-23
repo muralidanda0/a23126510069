@@ -438,3 +438,54 @@ Another option is to keep the database queries but add read replicas. Write oper
 
 
 
+
+Stage 5:
+
+Redesigning the Notify All Feature
+
+# The original approach and its problems:
+
+The current pseudocode does this for each student one by one:
+
+    send_email(student_id, message)
+    save_to_db(student_id, message)
+    push_to_app(student_id, message)
+
+The problem with this is that it runs synchronously for each of the 50,000 students. If sending an email for one student takes even 100ms, doing it for 50,000 students takes over an hour. That is completely unusable.
+
+The logs also showed that send_email failed for 200 students midway. With the current design there is no retry mechanism. Those 200 students simply never get the email and nobody knows about it.
+
+# Should saving to DB and sending email happen together?
+
+No they should not. These are two different operations with different failure modes. The email service might be slow or down at that moment but that should not stop us from saving the notification to the database. The student should still see the notification in the app even if the email failed.
+
+
+# Redesigned approach using a message queue
+
+Instead of processing all 50,000 students in one synchronous loop, we push jobs into a queue and process them in the background.
+
+    function notify_all(student_ids, message):
+        for student_id in student_ids:
+            push_to_queue(student_id, message)
+
+    function queue_worker(job):
+        student_id = job.student_id
+        message = job.message
+        
+        save_to_db(student_id, message)
+        push_to_app(student_id, message)
+        
+        result = send_email(student_id, message)
+        
+        if result == failed:
+            retry_later(job, attempts=3)
+
+
+The notify_all function now just pushes jobs into the queue and returns immediately. Multiple workers process the queue in parallel so 50,000 emails go out much faster.
+
+If an email fails, the worker retries it up to 3 times before marking it as failed and logging it for manual review.
+
+Saving to DB and pushing to app happen first because they are reliable and fast. Email is attempted after and failures do not affect the other two operations.
+
+
+
