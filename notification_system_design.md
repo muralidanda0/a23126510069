@@ -1,3 +1,4 @@
+stage 1:
 
 
 REST API Design — Notification Platform for campus
@@ -150,3 +151,176 @@ How it works:
 2. Server keeps the connection open permanently
 3. When HR sends a notification, server pushes it through SSE to all connected students
 4. Frontend receives it instantly and updates the UI without page refresh
+
+
+
+stage 2:
+
+
+Database Design
+
+Which database and why?
+
+I choose PostgreSQL for this platform. The reason is simple. Notifications have a fixed structure. Every notification will always have an id, a type, a message, a timestamp and a read or unread status tied to a student. When our data looks the same every time a relational database is the choice.
+
+I considered MongoDB. Since we are not dealing with nested data structures, here there is no real advantage to using it. PostgreSQL handles the kind of queries we need. Filtering by type sorting by timestamp checking read status. Efficiently especially once indexes are in place.
+
+
+Tables:
+
+
+The students table stores information about each student.
+
+id       - Unique identifier for each student
+
+name     - Name
+
+email    - College email, must be unique
+
+roll_no  - Roll number, must be unique
+
+created_at- When the record was created
+
+
+
+
+The notifications table stores each notification that gets created.
+
+id       - Unique identifier
+
+type     - One of Placement, Event or Result
+
+message  - The notification text
+
+timestamp- When the notification was created
+
+created_at- When the record was inserted into the database
+
+
+
+
+The student_notifications table is the most important one. It connects students to notifications. Tracks whether each student has read each notification.
+
+id             - Identifier
+
+student_id     - Which student this is for
+
+notification_id- Which notification this refers to
+
+is_read        - True if the student has read it
+
+read_at        - When they read it
+
+created_at     - When it was delivered to the student
+
+I kept notifications separate from student_notifications because one notification can go to many students. If HR posts a placement update it should reach all students. Storing it once in notifications and creating rows in student_notifications for each student is much cleaner than duplicating the notification content all times.
+
+
+
+
+Problems that will come up as data grows:
+
+
+
+The student_notifications table is going to get very large fast. If there are 50,000 students and each receives 100 notifications that is already 5 million rows. As more notifications come in every day this number keeps growing.
+
+Without indexes every query that filters by student read status or notification type will scan the table. That becomes extremely slow at this scale.
+
+Fetching the count on every page load is also a problem. If every student opens the app and triggers a COUNT query against 5 million rows the PostgreSQL database will struggle under that load.
+
+
+
+
+How I would like to handle these problems:
+
+
+Adding indexes on student_id and is_read is the most important fix. This makes filtering
+
+For counts I would store them in Redis and update the count whenever a notification is marked as read instead of running a COUNT query every single time.
+
+For data notifications older than 6 months can be moved to an archive table so the main table stays manageable in size.
+
+
+
+Queries:
+
+
+# Fetch all notifications for a student with type filter:
+
+
+
+SELECT n.id, n.type, n.message, n.timestamp sn.is_read
+
+FROM notifications n
+
+JOIN student_notifications sn ON n.id = sn.notification_id
+
+WHERE sn.student_id = 'student_id_here'
+
+AND n.type = 'Placement'
+
+ORDER BY n.timestamp DESC;
+
+
+Remove the AND n.type line if no filter is applied.
+
+
+# Get count for a student:
+
+
+SELECT COUNT(*) as unread_count
+
+, FROM student_notifications
+
+WHERE student_id = 'student_id_here'
+
+AND is_read = FALSE;
+
+Mark one notification as read:
+
+UPDATE student_notifications
+
+SET is_read = TRUE read_at = NOW()
+
+WHERE student_id = 'student_id_here'
+
+AND notification_id = 'notification_id_here';
+
+
+
+
+# Mark all as read:
+
+
+
+UPDATE student_notifications
+
+SET TRUE read_at = NOW()
+
+WHERE student_id = 'student_id_here'
+
+AND is_read = FALSE;
+
+
+
+
+# Indexes to add:
+
+
+
+
+CREATE INDEX idx_sn_student_id
+
+ON student_notifications(student_id);
+
+CREATE INDEX idx_sn_student_read
+
+ON student_notifications(student_id is_read);
+
+CREATE INDEX idx_notifications_type
+
+ON notifications(type);
+
+CREATE INDEX idx_notifications_timestamp
+
+ON notifications(timestamp DESC);
