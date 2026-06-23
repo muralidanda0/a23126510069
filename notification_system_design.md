@@ -413,3 +413,28 @@ Adding an index on notificationType and createdAt together will make this query 
 
     CREATE INDEX idx_notifications_type_date
     ON notifications(notificationType, createdAt DESC);
+
+
+
+
+Stage 4:
+
+
+# Handling Database Overload on Page Load:
+
+The problem here is that every time a student opens the app,it hits the database to fetch notifications. With 50,000 students all doing this at the same time, the database gets overwhelmed.
+
+The solution I would go with is caching using Redis.
+
+The idea is simple. The first time a student fetches their notifications, we get the data from the database and store a copy of it in Redis with an expiry time of around 60 seconds. The next time the same student loads the page within that 60 seconds, we return the data from Redis instead of hitting the database again.
+
+This means the database only gets queried once per minute per student instead of every single time they load the page.
+
+For the unread count specifically, we store it in Redis and only update it when a notification is marked as read. This avoids running a COUNT query on millions of rows repeatedly.
+
+The tradeoff is that the data might be slightly outdated for up to 60 seconds. For example if a new notification arrives, the student might not see it immediately. But for a campus notification platform this is completely acceptable. Nobody needs to see a notification within the exact second it was created.
+
+Another option is to keep the database queries but add read replicas. Write operations go to the primary database and read operations go to the replicas. This spreads the load but adds infrastructure complexity and cost. Redis caching is simpler and more effective for our use case.
+
+
+
