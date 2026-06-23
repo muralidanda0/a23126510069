@@ -489,3 +489,27 @@ Saving to DB and pushing to app happen first because they are reliable and fast.
 
 
 
+
+Stage 6
+
+Priority Inbox — Finding Top N Notifications
+
+# The approach:
+
+Each notification gets a priority score based on two things:its type and how recent it is.
+
+Placement notifications are the most important so they get the highest weight. Result notifications come next and Event notifications have the lowest weight.
+
+Recency also matters. A newer notification should rank higher than an older one of the same type.
+
+The score is calculated like this:
+
+    Placement = weight 3
+    Result    = weight 2
+    Event     = weight 1
+
+    score = type_weight + (1 / hours_since_created)
+
+Adding the recency part means a very recent Event can still score higher than a very old Placement notification.
+
+To maintain the top N efficiently as new notifications keep coming in, I use a min-heap of size N. Every time a new notification arrives, if its score is higher than the lowest score in the heap, we remove the lowest and add the new one. This keeps the heap always containing the top N notifications without sorting the entire list every time.
