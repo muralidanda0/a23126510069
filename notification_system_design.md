@@ -324,3 +324,92 @@ ON notifications(type);
 CREATE INDEX idx_notifications_timestamp
 
 ON notifications(timestamp DESC);
+
+
+
+
+
+Stage 3:
+
+
+
+
+Query analysis and optimization:
+
+# The original query:
+
+
+SELECT * FROM notifications
+
+WHERE studentID = 1042 AND isRead =
+
+ORDER BY createdAt ASC;
+
+
+
+# Is this query accurate?
+
+It will return the correct results.
+There are a couple of things to point out.
+Using SELECT * is not an idea. It gets every column in the notifications table even if the frontend only needs the id, type, message and timestamp. This wastes memory and increases the amount of data that is transferred for no reason.
+
+
+
+# Why is it slow?
+
+The notifications table has grown to 50,000 students and 5,000,000 notifications. When this query runs the database does not have an index on studentID or isRead. It has to look at every single row in the notifications table to find the ones that match. This is called a full table scan. It gets worse as the notifications table grows.
+
+The ORDER BY createdAt ASC adds work because the database has to sort the results after filtering them.
+
+At 5 million rows this kind of query can take seconds to complete which is not acceptable for something that runs every time a student opens the app.
+
+
+# What I would change
+
+First, select only the columns you actually need instead of using SELECT *.
+
+Second, add a composite index on studentID and isRead together. A composite index works well here because both columns appear in the WHERE clause every time this query runs.
+
+    CREATE INDEX idx_notifications_student_read 
+    ON notifications(studentID, isRead, createdAt);
+
+Including createdAt in the index also helps avoid a separate sort step since the data comes out already ordered.
+
+The improved query would look like this:
+
+    SELECT id, type, message, createdAt, isRead
+    FROM notifications
+    WHERE studentID = 1042 AND isRead = false
+    ORDER BY createdAt ASC;
+
+# What would the computation cost look like?
+
+Before the index, the database does a full table scan which is O(n) where n is the total number of rows. At 5 million rows this is very expensive.
+
+After adding the index, the database can jump directly to the rows for studentID 1042 and filter by isRead in O(log n) time. The difference is massive at scale.
+
+# Should we add indexes on every column to be safe?
+
+No
+
+Every index you add takes up disk space and slows down INSERT and UPDATE operations because the index has to be updated every time data changes. If you index every column, your write performance will suffer significantly.
+
+The right approach is to add indexes only on columns that appear frequently in WHERE clauses, JOIN conditions, or ORDER BY clauses. Index based on your actual query patterns, not just to be safe.
+
+
+
+# Query to find all students who received a Placement:
+
+notification in the last 7 days
+
+    SELECT DISTINCT studentID
+    FROM notifications
+    WHERE notificationType = 'Placement'
+    AND createdAt >= NOW() - INTERVAL '7 days';
+
+This query finds every unique student who got at least one Placement notification in the past week.
+
+Adding an index on notificationType and createdAt together will make this query fast as the table grows:
+
+    CREATE INDEX idx_notifications_type_date
+    ON notifications(notificationType, createdAt DESC);
