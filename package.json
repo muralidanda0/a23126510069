@@ -1,0 +1,23 @@
+{
+  "name": "a23126510069",
+  "version": "1.0.0",
+  "description": "",
+  "main": "priority_notifications.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/muralidanda0/a23126510069.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/muralidanda0/a23126510069/issues"
+  },
+  "homepage": "https://github.com/muralidanda0/a23126510069#readme",
+  "dependencies": {
+    "axios": "^1.18.1"
+  }
+}
